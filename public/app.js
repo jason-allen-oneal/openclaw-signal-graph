@@ -24,6 +24,11 @@ let graphData = null;
 function changeView(mode) {
     if (!graphData) return;
 
+    // Reset fixed positions
+    graphData.nodes.forEach(n => { n.fx = null; n.fy = null; });
+    container.selectAll(".link").style("display", "block");
+    container.selectAll(".node").style("display", "block");
+
     if (mode === 'force') {
         simulation
             .force("x", d3.forceX(width / 2).strength(0.05))
@@ -32,18 +37,16 @@ function changeView(mode) {
             .force("charge", d3.forceManyBody().strength(-150))
             .alphaTarget(0.3).restart();
     } else if (mode === 'timeline') {
-        // Arrange files along X axis, other nodes near them
         const files = graphData.nodes.filter(n => n.type === 'file').sort((a, b) => a.id.localeCompare(b.id));
         const fileMap = new Map(files.map((f, i) => [f.id, i]));
         
         simulation
             .force("x", d3.forceX(d => {
-                if (d.type === 'file') return (fileMap.get(d.id) / files.length) * width + 50;
-                // If linked to a file, pull towards that file's position
+                if (d.type === 'file') return (fileMap.get(d.id) / files.length) * (width - 100) + 50;
                 const link = graphData.links.find(l => l.source.id === d.id || l.target.id === d.id);
                 if (link) {
                     const otherId = link.source.id === d.id ? link.target.id : link.source.id;
-                    if (fileMap.has(otherId)) return (fileMap.get(otherId) / files.length) * width + 50;
+                    if (fileMap.has(otherId)) return (fileMap.get(otherId) / files.length) * (width - 100) + 50;
                 }
                 return width / 2;
             }).strength(0.8))
@@ -51,7 +54,6 @@ function changeView(mode) {
             .force("charge", d3.forceManyBody().strength(-30))
             .alphaTarget(0.3).restart();
     } else if (mode === 'cluster') {
-        // Cluster by type
         const typePos = {
             'file': { x: width * 0.25, y: height * 0.25 },
             'concept': { x: width * 0.75, y: height * 0.25 },
@@ -64,6 +66,46 @@ function changeView(mode) {
             .force("y", d3.forceY(d => typePos[d.type]?.y || height / 2).strength(0.5))
             .force("charge", d3.forceManyBody().strength(-50))
             .alphaTarget(0.3).restart();
+    } else if (mode === 'flow') {
+        // Linear column flow: Files -> Events -> Concepts/Tags
+        const files = graphData.nodes.filter(n => n.type === 'file').sort((a, b) => a.id.localeCompare(b.id));
+        const events = graphData.nodes.filter(n => n.type === 'event').sort((a, b) => a.id.localeCompare(b.id));
+        const concepts = graphData.nodes.filter(n => n.type === 'concept' || n.type === 'tag').sort((a, b) => a.id.localeCompare(b.id));
+
+        graphData.nodes.forEach(n => {
+            if (n.type === 'file') {
+                n.fx = 100;
+                n.fy = (files.indexOf(n) / files.length) * (height - 100) + 50;
+            } else if (n.type === 'event') {
+                n.fx = width / 2;
+                n.fy = (events.indexOf(n) / events.length) * (height - 100) + 50;
+            } else {
+                n.fx = width - 100;
+                n.fy = (concepts.indexOf(n) / concepts.length) * (height - 100) + 50;
+            }
+        });
+        simulation.alphaTarget(0.3).restart();
+    } else if (mode === 'matrix') {
+        // Adjacency Matrix
+        const files = graphData.nodes.filter(n => n.type === 'file').sort((a, b) => a.id.localeCompare(b.id));
+        const entities = graphData.nodes.filter(n => n.type !== 'file').sort((a, b) => a.type.localeCompare(b.type) || a.id.localeCompare(b.id));
+
+        const xStep = (width - 150) / files.length;
+        const yStep = (height - 100) / entities.length;
+
+        graphData.nodes.forEach(n => {
+            if (n.type === 'file') {
+                n.fx = files.indexOf(n) * xStep + 100;
+                n.fy = 20;
+            } else {
+                n.fx = 50;
+                n.fy = entities.indexOf(n) * yStep + 80;
+            }
+        });
+
+        // Hide links in matrix mode and just show connections?
+        // Actually let's just make links straight and orthogonal
+        simulation.alphaTarget(0.3).restart();
     }
 }
 
